@@ -9,24 +9,30 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
 	"filebundle/bundler"
 	"filebundle/crawler"
 	"filebundle/writer"
 )
 
-var (
-	inputDir       string
-	includeSubdirs string
-	extensions     string
-	exclude        string
-	outputFilename string
-)
+/*
+CONFIG STRUCT
+*/
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		handleError("executing command", err)
-	}
+type Config struct {
+	InputDir       string
+	IncludeDirs    string
+	Extensions     string
+	Exclude        string
+	OutputFilename string
+	NonInteractive bool
 }
+
+var cfg Config
+
+/*
+ROOT COMMAND
+*/
 
 var rootCmd = &cobra.Command{
 	Use:   "filebundle",
@@ -34,83 +40,156 @@ var rootCmd = &cobra.Command{
 	Run:   executeBundle,
 }
 
-func init() {
-	rootCmd.Flags().StringVarP(&inputDir, "input", "i", ".", "Root directory to crawl")
-	rootCmd.Flags().StringVarP(&includeSubdirs, "include", "d", "*", "Subdirectories to include (comma-separated or *)")
-	rootCmd.Flags().StringVarP(&extensions, "extensions", "e", ".md,.txt", "File extensions to bundle (comma-separated)")
-	rootCmd.Flags().StringVarP(&exclude, "exclude", "x", ".git,node_modules,bin", "Patterns or folders to exclude")
-	rootCmd.Flags().StringVarP(&outputFilename, "output", "o", "bundle.txt", "Output filename")
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		handleError("executing command", err)
+	}
 }
 
-// executeBundle orchestrates the crawl, bundle, and write process.
+/*
+FLAG BINDING
+*/
+
+func init() {
+
+	rootCmd.Flags().StringVarP(&cfg.InputDir, "input", "i", ".", "Root directory to crawl")
+	rootCmd.Flags().StringVarP(&cfg.IncludeDirs, "include", "d", "*", "Subdirectories to include")
+	rootCmd.Flags().StringVarP(&cfg.Extensions, "extensions", "e", ".md,.txt", "File extensions to include")
+	rootCmd.Flags().StringVarP(&cfg.Exclude, "exclude", "x", ".git,node_modules,bin", "Patterns or folders to exclude")
+	rootCmd.Flags().StringVarP(&cfg.OutputFilename, "output", "o", "bundle.txt", "Output filename")
+
+	rootCmd.Flags().BoolVar(&cfg.NonInteractive, "non-interactive", false, "Disable prompts and use defaults")
+}
+
+/*
+EXECUTION
+*/
+
 func executeBundle(cmd *cobra.Command, args []string) {
-	// 1. Prompt for missing or default values
-	inputDir = promptUser("Enter the root directory to crawl (default: '.'): ", inputDir)
-	includeSubdirs = promptUser("Enter subdirectories to include (comma-separated, '*' for all): ", includeSubdirs)
-	extensions = promptUser("Enter file extensions to include (e.g., 'md,txt'): ", extensions)
-	exclude = promptUser("Enter patterns to exclude (e.g., '.git,node_modules'): ", exclude)
-	outputFilename = promptUser("Enter the output filename (default: 'bundle.txt'): ", outputFilename)
 
-	// 2. Validate Input
-	if info, err := os.Stat(inputDir); os.IsNotExist(err) || !info.IsDir() {
-		handleError("validating input directory", fmt.Errorf("path does not exist or is not a directory: %s", inputDir))
+	resolveConfig(cmd)
+
+	// Validate input directory
+	if info, err := os.Stat(cfg.InputDir); os.IsNotExist(err) || !info.IsDir() {
+		handleError("validating input directory", fmt.Errorf("path does not exist or is not a directory: %s", cfg.InputDir))
 	}
 
-	// 3. Summary and Confirmation
+	// Summary
 	fmt.Printf("\nPreparing to bundle files with the following settings:\n")
-	fmt.Printf("  Input Root:  %s\n", inputDir)
-	fmt.Printf("  Include:     %s\n", includeSubdirs)
-	fmt.Printf("  Extensions:  %s\n", extensions)
-	fmt.Printf("  Exclude:     %s\n", exclude)
-	fmt.Printf("  Output File: %s\n", outputFilename)
+	fmt.Printf("  Input Root:  %s\n", cfg.InputDir)
+	fmt.Printf("  Include:     %s\n", cfg.IncludeDirs)
+	fmt.Printf("  Extensions:  %s\n", cfg.Extensions)
+	fmt.Printf("  Exclude:     %s\n", cfg.Exclude)
+	fmt.Printf("  Output File: %s\n", cfg.OutputFilename)
 
-	confirmation := promptUser("\nDo you want to proceed? (y/n): ", "y")
-	if strings.ToLower(confirmation) != "y" {
-		fmt.Println("Operation cancelled.")
-		return
+	if shouldPrompt() {
+		confirmation := promptUser("\nDo you want to proceed? (y/n): ", "y")
+		if strings.ToLower(confirmation) != "y" {
+			fmt.Println("Operation cancelled.")
+			return
+		}
 	}
+
 	fmt.Println()
 
-	// Step 1: Crawl the directory to find matching files
-	// Passing strings to crawler to handle the filtering logic internally
-	filePaths, err := crawler.Crawl(inputDir, includeSubdirs, extensions, exclude)
+	// Crawl directory
+	filePaths, err := crawler.Crawl(cfg.InputDir, cfg.IncludeDirs, cfg.Extensions, cfg.Exclude)
 	handleError("crawling directory", err)
 
 	if len(filePaths) == 0 {
-		fmt.Println("No matching files found. Check your filters and try again.")
+		fmt.Println("No matching files found.")
 		return
 	}
 
-	// Step 2: Generate the bundled file contents
-	// bundler.Bundle reads the file contents and formats them with headers/dividers
-	rootAbs, err := filepath.Abs(inputDir)
+	// Bundle files
+	rootAbs, err := filepath.Abs(cfg.InputDir)
 	handleError("resolving input directory", err)
 
 	bundleData, err := bundler.Bundle(rootAbs, filePaths)
 	handleError("bundling file contents", err)
 
-	// Step 3: Write the final product to disk
-	// writer.Write handles the TOC header + the bundleData
-	err = writer.Write(rootAbs, outputFilename, filePaths, bundleData)
+	// Write output
+	err = writer.Write(rootAbs, cfg.OutputFilename, filePaths, bundleData)
 	handleError("writing bundle to disk", err)
 
-	fmt.Printf("\nSuccessfully bundled %d files into %s\n", len(filePaths), outputFilename)
+	fmt.Printf("\nSuccessfully bundled %d files into %s\n", len(filePaths), cfg.OutputFilename)
 }
 
-// promptUser displays a message and returns user input, falling back to a default value.
+/*
+CONFIG RESOLUTION CASCADE
+Flags → ENV → Prompt → Default
+*/
+
+func resolveConfig(cmd *cobra.Command) {
+
+	promptIfMissing(cmd, "input", &cfg.InputDir, "FILEBUNDLE_INPUT", "Enter root directory")
+	promptIfMissing(cmd, "include", &cfg.IncludeDirs, "FILEBUNDLE_INCLUDE", "Enter directories to include")
+	promptIfMissing(cmd, "extensions", &cfg.Extensions, "FILEBUNDLE_EXTENSIONS", "Enter file extensions")
+	promptIfMissing(cmd, "exclude", &cfg.Exclude, "FILEBUNDLE_EXCLUDE", "Enter exclude patterns")
+	promptIfMissing(cmd, "output", &cfg.OutputFilename, "FILEBUNDLE_OUTPUT", "Enter output filename")
+}
+
+/*
+HELPERS
+*/
+
+func promptIfMissing(cmd *cobra.Command, flag string, value *string, envKey string, message string) {
+
+	// CLI flag wins
+	if cmd.Flags().Changed(flag) {
+		return
+	}
+
+	// ENV override
+	if env := os.Getenv(envKey); env != "" {
+		*value = env
+		return
+	}
+
+	// Prompt
+	if shouldPrompt() {
+		*value = promptUser(fmt.Sprintf("%s (default: %s): ", message, *value), *value)
+	}
+}
+
+/*
+PROMPT LOGIC
+*/
+
+func shouldPrompt() bool {
+
+	if cfg.NonInteractive {
+		return false
+	}
+
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+
+	return (stat.Mode() & os.ModeCharDevice) != 0
+}
+
 func promptUser(message string, defaultValue string) string {
+
 	reader := bufio.NewReader(os.Stdin)
+
 	fmt.Print(message)
+
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 
 	if input == "" {
 		return defaultValue
 	}
+
 	return input
 }
 
-// handleError provides a centralized way to exit on non-recoverable errors.
+/*
+ERROR HANDLING
+*/
+
 func handleError(step string, err error) {
 	if err != nil {
 		log.Fatalf("Error %s: %v", step, err)
