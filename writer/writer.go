@@ -39,7 +39,7 @@ func Write(root string, outputPath string, filePaths []string, bundleBody string
 	}
 	defer f.Close()
 
-	// Build TABLE OF CONTENTS header.
+	// Build TABLE OF CONTENTS header as a markdown list framed by TOC markers.
 	var tocBuilder strings.Builder
 	tocBuilder.WriteString("TABLE OF CONTENTS\n")
 	for _, p := range filePaths {
@@ -47,10 +47,11 @@ func Write(root string, outputPath string, filePaths []string, bundleBody string
 		if err != nil {
 			rel = p
 		}
+		tocBuilder.WriteString("- ")
 		tocBuilder.WriteString(filepath.ToSlash(rel))
 		tocBuilder.WriteString("\n")
 	}
-	tocBuilder.WriteString("\n\n")
+	tocBuilder.WriteString("\nTOCEND\n\n\n")
 
 	if _, err := f.WriteString(tocBuilder.String()); err != nil {
 		return err
@@ -61,4 +62,3 @@ func Write(root string, outputPath string, filePaths []string, bundleBody string
 
 	return nil
 }
-

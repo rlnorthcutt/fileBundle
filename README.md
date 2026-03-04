@@ -185,13 +185,15 @@ export FILEBUNDLE_OUTPUT="docs-bundle.txt"
 The generated bundle file is a single text file with two main sections:
 
 1. **TABLE OF CONTENTS**  
-   A header listing all bundled files by relative path, one per line:
+   A header framed by markers and listing all bundled files as a markdown list:
 
    ```text
+   TOCSTART
    TABLE OF CONTENTS
-   docs/intro.md
-   docs/setup.md
-   notes/todo.txt
+   - docs/intro.md
+   - docs/setup.md
+   - notes/todo.txt
+   TOCEND
 
    ```
 
