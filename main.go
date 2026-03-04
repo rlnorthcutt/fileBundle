@@ -15,10 +15,7 @@ import (
 	"filebundle/writer"
 )
 
-/*
-CONFIG STRUCT
-*/
-
+// Config holds all user-configurable options for a single run.
 type Config struct {
 	InputDir       string
 	IncludeDirs    string
@@ -29,10 +26,7 @@ type Config struct {
 }
 
 var cfg Config
-
-/*
-ROOT COMMAND
-*/
+var interactive bool
 
 var rootCmd = &cobra.Command{
 	Use:   "filebundle",
@@ -41,17 +35,17 @@ var rootCmd = &cobra.Command{
 }
 
 func main() {
+	// Detect whether stdin is attached to a TTY so we can decide
+	// if interactive prompts are appropriate.
+	stat, _ := os.Stdin.Stat()
+	interactive = (stat.Mode() & os.ModeCharDevice) != 0
+
 	if err := rootCmd.Execute(); err != nil {
 		handleError("executing command", err)
 	}
 }
 
-/*
-FLAG BINDING
-*/
-
 func init() {
-
 	rootCmd.Flags().StringVarP(&cfg.InputDir, "input", "i", ".", "Root directory to crawl")
 	rootCmd.Flags().StringVarP(&cfg.IncludeDirs, "include", "d", "*", "Subdirectories to include")
 	rootCmd.Flags().StringVarP(&cfg.Extensions, "extensions", "e", ".md,.txt", "File extensions to include")
@@ -61,12 +55,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&cfg.NonInteractive, "non-interactive", false, "Disable prompts and use defaults")
 }
 
-/*
-EXECUTION
-*/
-
 func executeBundle(cmd *cobra.Command, args []string) {
-
 	resolveConfig(cmd)
 
 	// Validate input directory
@@ -115,13 +104,12 @@ func executeBundle(cmd *cobra.Command, args []string) {
 	fmt.Printf("\nSuccessfully bundled %d files into %s\n", len(filePaths), cfg.OutputFilename)
 }
 
-/*
-CONFIG RESOLUTION CASCADE
-Flags → ENV → Prompt → Default
-*/
-
 func resolveConfig(cmd *cobra.Command) {
-
+	// Configuration precedence:
+	// 1. CLI flags (highest)
+	// 2. Environment variables
+	// 3. Interactive prompts (if allowed)
+	// 4. Built-in defaults (lowest)
 	promptIfMissing(cmd, "input", &cfg.InputDir, "FILEBUNDLE_INPUT", "Enter root directory")
 	promptIfMissing(cmd, "include", &cfg.IncludeDirs, "FILEBUNDLE_INCLUDE", "Enter directories to include")
 	promptIfMissing(cmd, "extensions", &cfg.Extensions, "FILEBUNDLE_EXTENSIONS", "Enter file extensions")
@@ -129,53 +117,36 @@ func resolveConfig(cmd *cobra.Command) {
 	promptIfMissing(cmd, "output", &cfg.OutputFilename, "FILEBUNDLE_OUTPUT", "Enter output filename")
 }
 
-/*
-HELPERS
-*/
-
 func promptIfMissing(cmd *cobra.Command, flag string, value *string, envKey string, message string) {
-
-	// CLI flag wins
+	// CLI flag wins.
 	if cmd.Flags().Changed(flag) {
 		return
 	}
 
-	// ENV override
+	// Environment variable override.
 	if env := os.Getenv(envKey); env != "" {
 		*value = env
 		return
 	}
 
-	// Prompt
-	if shouldPrompt() {
-		*value = promptUser(fmt.Sprintf("%s (default: %s): ", message, *value), *value)
+	// Prompt only if allowed.
+	if !shouldPrompt() {
+		return
 	}
+
+	*value = promptUser(
+		fmt.Sprintf("%s (default: %s): ", message, *value),
+		*value,
+	)
 }
 
-/*
-PROMPT LOGIC
-*/
-
 func shouldPrompt() bool {
-
-	if cfg.NonInteractive {
-		return false
-	}
-
-	stat, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-
-	return (stat.Mode() & os.ModeCharDevice) != 0
+	return interactive && !cfg.NonInteractive
 }
 
 func promptUser(message string, defaultValue string) string {
-
 	reader := bufio.NewReader(os.Stdin)
-
 	fmt.Print(message)
-
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
 
