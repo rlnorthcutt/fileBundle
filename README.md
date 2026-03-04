@@ -110,6 +110,18 @@ Or, use the short flags:
   -o="docs-bundle.txt"
 ```
 
+To suppress all interactive prompts (including the final confirmation) and rely only on flags and environment variables, add:
+
+```bash
+./filebundle \
+  --non-interactive \
+  --input="./docs" \
+  --include="*,guides" \
+  --extensions="md,txt" \
+  --exclude=".git,node_modules,bin" \
+  --output="docs-bundle.txt"
+```
+
 ### Flags
 
 - `--input, -i`  
@@ -134,6 +146,39 @@ Or, use the short flags:
 - `--output, -o`  
   **Output filename** (relative to the current working directory).  
   Default: `bundle.txt`
+
+- `--non-interactive`  
+  When set, **disables all prompts** (including the y/n confirmation).  
+  In this mode, `filebundle` only uses CLI flags and environment variables plus built-in defaults.
+
+### Environment variables
+
+Each flag can also be configured via an environment variable. The precedence is:
+
+1. **CLI flags** (highest)
+2. **Environment variables**
+3. **Interactive prompts** (if not in `--non-interactive` mode and a TTY is available)
+4. **Built-in defaults** (lowest)
+
+Supported environment variables:
+
+- `FILEBUNDLE_INPUT` → `--input`
+- `FILEBUNDLE_INCLUDE` → `--include`
+- `FILEBUNDLE_EXTENSIONS` → `--extensions`
+- `FILEBUNDLE_EXCLUDE` → `--exclude`
+- `FILEBUNDLE_OUTPUT` → `--output`
+
+Example using env vars in a non-interactive script:
+
+```bash
+export FILEBUNDLE_INPUT="./docs"
+export FILEBUNDLE_INCLUDE="guides,reference"
+export FILEBUNDLE_EXTENSIONS="md,txt"
+export FILEBUNDLE_EXCLUDE=".git,node_modules,bin"
+export FILEBUNDLE_OUTPUT="docs-bundle.txt"
+
+./filebundle --non-interactive
+```
 
 ## Output Format
 
